@@ -12,6 +12,23 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Vulkan
 find_package(Vulkan REQUIRED)
+
+# On Windows, GLFW installed by vcpkg is not always on CMake's default
+# search path. Use VCPKG_ROOT when available, with the standard vcpkg
+# installation location as a fallback.
+if(WIN32 AND NOT glfw3_DIR)
+  set(_VCPKG_ROOT "$ENV{VCPKG_ROOT}")
+  if(NOT _VCPKG_ROOT AND EXISTS "C:/vcpkg")
+    set(_VCPKG_ROOT "C:/vcpkg")
+  endif()
+  if(_VCPKG_ROOT)
+    list(APPEND CMAKE_PREFIX_PATH
+      "${_VCPKG_ROOT}/installed/x64-windows"
+      "${_VCPKG_ROOT}/installed/x64-windows/share/glfw3"
+    )
+  endif()
+endif()
+
 find_package(glfw3 REQUIRED)
 
 # GLM ships with the Vulkan SDK, but not always on the default include path
@@ -107,7 +124,11 @@ target_link_libraries(lab07core PUBLIC
   stb
 )
 
-target_compile_options(lab07core PUBLIC -Wall -Wextra)
+if(MSVC)
+  target_compile_options(lab07core PUBLIC /W4)
+else()
+  target_compile_options(lab07core PUBLIC -Wall -Wextra)
+endif()
 
 # ── Shader compilation ────────────────────────────────────────────────────────
 # glslc ships with the Vulkan SDK; glslangValidator is the fallback name.
@@ -140,6 +161,15 @@ set(PARTS info circle terrain sdf heightmap toy)
 foreach(PART ${PARTS})
   add_executable(${PART} src/${PART}.cpp)
   target_link_libraries(${PART} PRIVATE lab07core)
+  if(WIN32)
+    # vcpkg's GLFW DLL is not normally on PATH when launching from PowerShell.
+    # Keep each executable self-contained in its configuration output folder.
+    add_custom_command(TARGET ${PART} POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:glfw>
+        $<TARGET_FILE_DIR:${PART}>
+    )
+  endif()
 endforeach()
 
 # .glsl files are includes only: never compiled, but every shader depends on them
